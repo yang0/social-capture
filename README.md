@@ -12,15 +12,17 @@
 
 ## 先看结果
 
-同一个浏览器页面，工具只保留真实内容卡片：
+首页先展示最容易被截坏、也最能体现边界控制的两个平台：
 
-![X 推文卡片截图演示](docs/assets/demo-x-card.png)
+小红书默认保留笔记、轮播图和前 8 条评论：
 
-知乎长文超过 9:16 后会沿正文、图片和段落边界自动拆分；下面是其中一张实际输出：
+<img src="docs/assets/demo-xhs-note.png" alt="小红书笔记卡片、轮播图与评论区截图演示" width="720">
 
-![知乎长文分片截图演示](docs/assets/demo-zhihu-long-01.png)
+抖音默认保留真实账号资料和两排作品。资料区会校验昵称、抖音号和统计字段，作品区按当前页面列数保持两排：
 
-再看另外两个已经验收的内容卡片：
+<img src="docs/assets/demo-douyin-profile.png" alt="抖音账号资料和两排作品截图演示" width="720">
+
+其他平台的演示图收进下面的折叠区，避免首页被长图淹没：
 
 <details>
 <summary>微博：正文与转发卡片</summary>
@@ -30,16 +32,16 @@
 </details>
 
 <details>
-<summary>抖音：账号页两排作品</summary>
+<summary>知乎：长回答分片</summary>
 
-<img src="docs/assets/demo-douyin-profile.png" alt="抖音账号页两排作品截图演示" width="720">
+<img src="docs/assets/demo-zhihu-long-01.png" alt="知乎长回答分片截图演示" width="720">
 
 </details>
 
 <details>
-<summary>小红书：笔记、轮播图与评论区</summary>
+<summary>X：精确推文卡片</summary>
 
-<img src="docs/assets/demo-xhs-note.png" alt="小红书笔记卡片、轮播图与评论区截图演示" width="720">
+<img src="docs/assets/demo-x-card.png" alt="X 推文卡片截图演示" width="720">
 
 </details>
 
