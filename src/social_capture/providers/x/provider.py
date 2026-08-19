@@ -82,7 +82,7 @@ class XProvider(CaptureProvider):
                 pass
         image, info = await capture_locator(
             locator,
-            boundary_selectors=("[data-testid=tweetText]", "img", "video", "blockquote", "[data-testid=card.wrapper]"),
+            boundary_selectors=("[data-testid=tweetText]", "img", "video", "blockquote", '[data-testid="card.wrapper"]'),
         )
         handle = await locator.evaluate(
             r"""el => { for (const a of el.querySelectorAll('a[href]')) {

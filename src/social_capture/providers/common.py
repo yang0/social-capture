@@ -175,25 +175,73 @@ async def capture_locator_banded(
         raise TargetNotFoundError("截图区域尺寸无效", code="empty-card")
     if height <= max_band_height:
         return await capture_locator(locator, boundary_selectors=boundary_selectors)
-    box = await locator.bounding_box()
-    if not box:
-        raise TargetNotFoundError("截图区域没有可见边界", code="empty-card")
+    metrics = await locator.evaluate(
+        """el => {
+          const rect = el.getBoundingClientRect();
+          const root = document.documentElement;
+          const body = document.body;
+          return {
+            pageX: rect.left + window.scrollX,
+            pageY: rect.top + window.scrollY,
+            viewportWidth: window.innerWidth,
+            viewportHeight: window.innerHeight,
+            documentHeight: Math.max(root.scrollHeight, body ? body.scrollHeight : 0),
+          };
+        }"""
+    )
+    metrics = dict(metrics or {})
+    page_x = float(metrics.get("pageX") or 0)
+    page_y = float(metrics.get("pageY") or 0)
+    viewport_width = int(metrics.get("viewportWidth") or 0)
+    viewport_height = int(metrics.get("viewportHeight") or 0)
+    document_height = int(metrics.get("documentHeight") or 0)
+    if viewport_width <= 0 or viewport_height <= 0:
+        raise TargetNotFoundError("浏览器视口尺寸无效", code="empty-card")
+    if page_x < 0 or page_x + width > viewport_width + 1:
+        raise TargetNotFoundError("截图区域超出横向视口", code="empty-card")
+    # DOM measurements can differ by a fraction of a CSS pixel: ``height``
+    # is rounded up while the document bottom is reported as an integer.  Do
+    # not schedule a final one-pixel band beyond the actual document.
+    document_remaining = int(max(0, document_height - page_y))
+    height = min(height, document_remaining)
+    if height <= 0:
+        raise TargetNotFoundError("截图区域超出文档边界", code="empty-card")
     images: list[Image.Image] = []
     try:
-        for top in range(0, height, max_band_height):
-            bottom = min(height, top + max_band_height)
+        top = 0
+        while top < height:
+            absolute_top = page_y + top
+            max_scroll_y = max(0, document_height - viewport_height)
+            scroll_y = min(max(0, absolute_top), max_scroll_y)
+            await page.evaluate("y => window.scrollTo(0, y)", scroll_y)
+            await page.evaluate("() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))")
+            clip_y = absolute_top - scroll_y
+            available = int(viewport_height - clip_y)
+            band_height = min(height - top, max_band_height, available)
+            if band_height <= 0:
+                raise TargetNotFoundError("长内容分段截图无法取得可见区域", code="empty-card")
             data = await page.screenshot(
                 type="png",
                 animations="disabled",
-                clip={"x": box["x"], "y": box["y"] + top, "width": width, "height": bottom - top},
+                clip={"x": page_x, "y": clip_y, "width": width, "height": band_height},
             )
             image = Image.open(io.BytesIO(data)).convert("RGBA")
             images.append(image)
-        canvas = Image.new("RGBA", (width, sum(image.height for image in images)), (255, 255, 255, 255))
+            top += band_height
+        canvas_width = max(image.width for image in images)
+        canvas_height = sum(image.height for image in images)
+        canvas = Image.new("RGBA", (canvas_width, canvas_height), (255, 255, 255, 255))
         cursor = 0
         for image in images:
             canvas.paste(image, (0, cursor))
             cursor += image.height
+        scale_y = canvas_height / height
+        info["boundaries"] = [
+            {**boundary, "y": round(float(boundary.get("y") or 0) * scale_y)}
+            for boundary in info.get("boundaries") or ()
+        ]
+        info["width"] = canvas_width
+        info["height"] = canvas_height
         stream = io.BytesIO()
         canvas.save(stream, format="PNG")
         return stream.getvalue(), info

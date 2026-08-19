@@ -137,6 +137,7 @@ async def _capture(args: argparse.Namespace) -> int:
         provider_name = args.platform
         try:
             provider = _provider_for(value, args.platform)
+            provider_name = provider.name
             reference = provider.parse_reference(value)
             key = (reference.platform, reference.content_id)
             if key in seen:
@@ -161,7 +162,6 @@ async def _capture(args: argparse.Namespace) -> int:
                 artifact = await provider.capture(browser, reference, options)
             item = writer.write_artifact(reference, artifact, options)
             items.append(item)
-            provider_name = provider.name
         except Exception as exc:
             if isinstance(exc, SocialCaptureError):
                 message = str(exc)

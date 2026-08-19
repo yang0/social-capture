@@ -30,12 +30,17 @@ class ProviderContractTests(unittest.TestCase):
         self.assertIn("data-social-capture-zhihu", _PREPARE_SCRIPT)
         self.assertIn("capture_locator_banded", inspect.getsource(capture_locator_banded))
         self.assertEqual(inspect.signature(capture_locator_banded).parameters["max_band_height"].default, 12_000)
+        banded = inspect.getsource(capture_locator_banded)
+        self.assertIn("window.scrollTo", banded)
+        self.assertIn("document_remaining", banded)
 
     def test_x_contract_supports_reload_once_and_exact_status_locator(self):
         source = inspect.getsource(XProvider.capture)
         self.assertIn("page.reload", source)
         self.assertEqual(source.count("page.reload"), 1)
         self.assertIn("/status/{reference.content_id}", source)
+        self.assertIn('[data-testid="card.wrapper"]', source)
+        self.assertNotIn("[data-testid=card.wrapper]", source)
         self.assertIn("2089900346328158261", "2089900346328158261")
 
     def test_xhs_contract_has_signed_url_and_swiper_frame_handling(self):
