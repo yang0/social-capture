@@ -1,0 +1,44 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "social-capture"
+version = "0.1.0"
+description = "Capture focused content cards from social platforms through a local Chrome session."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "social-capture contributors" }]
+dependencies = [
+  "Pillow>=10.0",
+  "playwright>=1.40",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0",
+  "ruff>=0.6",
+]
+
+[project.scripts]
+social-capture = "social_capture.cli:main"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+# Browser automation deliberately catches provider/library errors so one
+# platform item can become a manifest error instead of killing a batch.
+ignore = ["BLE001", "S110", "S112", "PYI034", "PYI036", "UP035", "UP037", "SIM102", "RUF007"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
