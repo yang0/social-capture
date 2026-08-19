@@ -4,6 +4,8 @@
 和抖音五个平台。它通过 Chrome CDP 连接本地浏览器，定位指定内容卡片，
 输出 PNG 和机器可读的 `manifest.json`。
 
+维护者：[X 上的 @yang02010](https://x.com/yang02010)
+
 本项目不包含搜索、发布、评论、原始媒体下载或平台 SDK。搜索属于独立的
 可选后端；用户需要搜索时先执行 `social-capture search-backends --json`，
 再由 AI 根据指引安装/调用外部项目。工具不会自动 clone、安装或执行任何

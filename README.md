@@ -5,6 +5,8 @@ cards on Weibo, Zhihu, X, Xiaohongshu and Douyin. It connects to a local Chrome
 session through CDP, locates the requested content card, and writes PNG images
 plus a machine-readable manifest.
 
+Maintainer: [@yang02010 on X](https://x.com/yang02010)
+
 The project does not search, publish, comment, download original media, or
 bundle platform SDKs. Search is intentionally a separate optional backend;
 use `social-capture search-backends --json` to get installation and hand-off
