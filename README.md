@@ -123,6 +123,14 @@ New-Item -ItemType Directory -Force $dest | Out-Null
 Copy-Item -Recurse -Force .\skill\* $dest
 ```
 
+通用网页截图 Skill 位于 `skills/web-screenshot/`，可单独安装到同一目录：
+
+```powershell
+$webDest = "$env:USERPROFILE\.agents\skills\web-screenshot"
+New-Item -ItemType Directory -Force $webDest | Out-Null
+Copy-Item -Recurse -Force .\skills\web-screenshot\* $webDest
+```
+
 安装完成后重启或刷新 Agent，调用 `/social-capture`，或者直接说：
 
 ```text
@@ -171,6 +179,50 @@ social-capture capture "https://www.douyin.com/user/<sec_uid>" `
 social-capture capture --input .\urls.txt `
   --output-dir "E:\temp\social-capture\batch"
 ```
+
+## 通用网页截图
+
+如果用户只提供一个普通网页 URL，而不是上述平台内容，使用独立的
+`webpage` 子命令或安装 [`skills/web-screenshot/SKILL.md`](skills/web-screenshot/SKILL.md)：
+
+```powershell
+# 当前视口（默认 1440x900）
+social-capture webpage "https://example.com" --output-dir "E:\temp\web"
+
+# 完整网页，输出一张 PNG
+social-capture webpage "https://example.com" --output-dir "E:\temp\web" --mode full-page
+
+# 只截恰好一个可见元素
+social-capture webpage "https://example.com" --output-dir "E:\temp\web" `
+  --mode element --selector "main article" --viewport 1280x800
+```
+
+网页截图只接受 HTTP(S) URL，支持 `viewport`、`full-page` 和 `element` 三种模式。
+`full-page` 截图前会按导航后记录的初始文档高度，有限地按视口步长滚动，短暂触发图片
+懒加载，再在底部有限等待当前图片和字体；如果懒加载让文档增高，会只扫描新增范围，
+直到高度稳定或达到轮数上限，最后回到顶部截图。不会无限自动滚动。单张外部图片加载
+失败或超时不会让整页截图失败，`manifest.json` 会记录 `image_count`、`loaded`、
+`failed`、`pending`、`initial_height`、`final_warmup_height`、`rounds`、
+`executed_steps` 和 `timed_out`，便于核验页面资源和有限预热是否完成。预热最多执行
+4 轮、64 个滚动位置，每步或轮询最多等待 120 毫秒，总等待上限为 10 秒。它优先连接
+现有 Chrome CDP；CDP 不可用时，网页命令可以为
+公开页面启动并清理临时 Chrome。完成后请读取输出目录中的 `manifest.json`，核对截图
+模式、最终 URL、尺寸和 SHA-256。网页命令不提供批量输入、Cookie 文件、PDF/JPEG、
+设备模拟或登录绕过。
+
+输出目录结构如下：
+
+```text
+<output-dir>/
+├── manifest.json
+└── images/
+    └── webpage-<host>-01-of-01.png
+```
+
+如果仍看到空白图片，先查看 `manifest.json`：`pending > 0` 或 `timed_out: true`
+表示页面资源在预热预算内没有稳定下来，可以增加 `--wait` 后重试；`failed > 0`
+表示资源本身返回失败，截图工具不会伪造内容。需要登录的页面应连接已经登录的
+Chrome CDP，会触发无限加载的页面则只会在有限轮数内继续扫描。
 
 返回码：`0` 全部成功；`2` 参数、认证、浏览器或解析失败；`3` 批量任务部分成功。
 

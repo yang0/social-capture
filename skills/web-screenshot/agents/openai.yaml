@@ -1,0 +1,7 @@
+interface:
+  display_name: "Web Screenshot"
+  short_description: "Capture and verify screenshots of specified webpages"
+  default_prompt: "Use $web-screenshot to capture this specified webpage and verify its manifest."
+
+policy:
+  allow_implicit_invocation: true

@@ -21,7 +21,10 @@ from ..models import CaptureArtifact, CaptureOptions, CaptureReference, CaptureR
 from ..splitting import split_image
 
 _INVALID_FILENAME = re.compile(r"[^A-Za-z0-9._-]+")
-_OWNED_IMAGE = re.compile(r"^(?:weibo|zhihu|x|xiaohongshu|douyin)-[A-Za-z0-9_-]+-\d{2,}-of-\d{2,}\.png$")
+_OWNED_IMAGE = re.compile(
+    r"^(?:weibo|zhihu|x|xiaohongshu|douyin|webpage)-[A-Za-z0-9_.-]+-\d{2,}-of-\d{2,}\.png$"
+)
+_WEBPAGE_MODES = {"viewport", "full-page", "element"}
 
 
 def safe_filename(value: str, fallback: str = "capture", limit: int = 80) -> str:
@@ -40,20 +43,28 @@ def _normalise_png(data: bytes) -> tuple[bytes, int, int]:
         raise ImageError("浏览器返回的数据不是有效 PNG/图片") from exc
 
 
-def _metadata_without_secrets(value: Any) -> Any:
+def _metadata_without_secrets(value: Any, *, key_name: str | None = None) -> Any:
     """Drop keys that providers must never persist in a manifest."""
 
     secret_names = {"cookie", "cookies", "xsec_token", "token", "signature", "sign", "auth"}
     if isinstance(value, dict):
         return {
-            str(key): _metadata_without_secrets(item)
+            str(key): _metadata_without_secrets(item, key_name=str(key))
             for key, item in value.items()
             if str(key).lower() not in secret_names
         }
     if isinstance(value, list):
-        return [_metadata_without_secrets(item) for item in value]
+        return [_metadata_without_secrets(item, key_name=key_name) for item in value]
     if isinstance(value, tuple):
-        return [_metadata_without_secrets(item) for item in value]
+        return [_metadata_without_secrets(item, key_name=key_name) for item in value]
+    if isinstance(value, str) and key_name and key_name.lower() in {
+        "url",
+        "source_url",
+        "final_url",
+        "resolved_url",
+        "input",
+    }:
+        return redact_source_url(value)
     return value
 
 
@@ -171,7 +182,11 @@ class OutputWriter:
                         "height": height,
                         "coordinates": {"x": 0, "y": 0, "width": width, "height": height},
                         "overlap": 0,
-                        "mode": "card",
+                        "mode": (
+                            artifact.capture_mode
+                            if reference.platform == "webpage" and artifact.capture_mode in _WEBPAGE_MODES
+                            else "card"
+                        ),
                         "sha256": hashlib.sha256(data).hexdigest(),
                     }
                 ]
@@ -197,6 +212,16 @@ class OutputWriter:
                 part["label"] = piece["label"]
             result.parts.append(part)
         result.metadata["part_count"] = len(result.parts)
+        if reference.platform == "webpage" and len(result.parts) == 1:
+            # Keep the top-level webpage dimensions/hash in sync with the
+            # normalized PNG that was actually written to disk.
+            result.metadata.update(
+                {
+                    "width": result.parts[0]["width"],
+                    "height": result.parts[0]["height"],
+                    "sha256": result.parts[0]["sha256"],
+                }
+            )
         return result
 
     def write_manifest(self, items: Iterable[CaptureResult], *, extra: dict[str, Any] | None = None) -> Path:

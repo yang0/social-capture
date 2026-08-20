@@ -23,6 +23,14 @@ from .registry import (
     provider_health,
     search_backend_status,
 )
+from .webpage import (
+    DEFAULT_VIEWPORT,
+    WEBPAGE_MODES,
+    capture_webpage,
+    parse_viewport,
+    validate_webpage_url,
+    webpage_reference,
+)
 
 PLATFORMS = tuple(provider.name for provider in list_providers())
 
@@ -30,7 +38,7 @@ PLATFORMS = tuple(provider.name for provider in list_providers())
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="social-capture",
-        description="Capture focused cards from Weibo, Zhihu, X, Xiaohongshu and Douyin.",
+        description="Capture focused social cards or screenshots of specified webpages.",
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -70,6 +78,22 @@ def _parser() -> argparse.ArgumentParser:
     capture.add_argument("--xhs-all-images", action="store_true", help="小红书：遍历可见轮播图")
     capture.add_argument("--douyin-rows", type=int, default=2, choices=range(1, 5), metavar="1-4")
     capture.add_argument("--json", action="store_true", help="输出 JSON 摘要")
+
+    webpage = sub.add_parser("webpage", help="截图一个指定的 HTTP(S) 网页")
+    webpage.add_argument("url", help="明确提供的 HTTP(S) URL")
+    webpage.add_argument("--output-dir", type=Path, required=True, help="必填：用户指定的输出目录")
+    webpage.add_argument("--mode", choices=WEBPAGE_MODES, default="viewport", help="截图模式")
+    webpage.add_argument("--selector", help="element 模式下唯一可见元素的 CSS 选择器")
+    webpage.add_argument(
+        "--viewport",
+        default=f"{DEFAULT_VIEWPORT[0]}x{DEFAULT_VIEWPORT[1]}",
+        metavar="WIDTHxHEIGHT",
+        help="浏览器视口，默认 1440x900",
+    )
+    webpage.add_argument("--cdp", "--cdp-port", dest="cdp", default="http://127.0.0.1:9221")
+    webpage.add_argument("--wait", type=float, default=3.0, metavar="SECONDS")
+    webpage.add_argument("--overwrite", action="store_true", help="允许覆盖目标目录中的同名结果")
+    webpage.add_argument("--json", action="store_true", help="输出 JSON 摘要")
     return parser
 
 
@@ -191,6 +215,78 @@ async def _capture(args: argparse.Namespace) -> int:
     return 0 if summary["failed_count"] == 0 else (3 if summary["success_count"] else 2)
 
 
+def _webpage_error(exc: BaseException) -> tuple[str, str]:
+    if isinstance(exc, SocialCaptureError):
+        return str(exc), error_kind(exc)
+    return redact_text(str(exc)) or exc.__class__.__name__, "capture"
+
+
+async def _webpage(args: argparse.Namespace) -> int:
+    url = validate_webpage_url(args.url)
+    viewport = parse_viewport(args.viewport)
+    if args.mode == "element" and not str(args.selector or "").strip():
+        raise InputError("element 模式必须提供 --selector", code="selector-required")
+    if args.mode != "element" and args.selector is not None:
+        raise InputError("--selector 只适用于 element 模式", code="selector-not-allowed")
+
+    writer = OutputWriter(args.output_dir, overwrite=args.overwrite)
+    writer.preflight()
+    reference = webpage_reference(url)
+    options = CaptureOptions(
+        output_dir=writer.output_dir,
+        cdp_url=normalize_cdp_url(args.cdp),
+        wait_seconds=max(0.0, args.wait),
+        overwrite=bool(args.overwrite),
+    )
+    items: list[CaptureResult] = []
+    try:
+        # Public webpages may use a clean temporary Chrome when the user's
+        # CDP endpoint is unavailable. BrowserSession's default remains
+        # strict, preserving the social-platform command contract.
+        async with BrowserSession(options.cdp_url, allow_temporary=True) as browser:
+            artifact = await capture_webpage(
+                browser,
+                url,
+                mode=args.mode,
+                selector=args.selector,
+                viewport=viewport,
+                wait_seconds=options.wait_seconds,
+            )
+        items.append(writer.write_artifact(reference, artifact, options))
+    except Exception as exc:
+        message, kind = _webpage_error(exc)
+        items.append(
+            CaptureResult(
+                input_value=reference.input_value,
+                platform="webpage",
+                content_id=reference.content_id,
+                source_url=reference.url,
+                content_type="webpage",
+                status="error",
+                capture_mode=args.mode,
+                metadata={"viewport": {"width": viewport[0], "height": viewport[1]}},
+                error=message,
+                error_kind=kind,
+            )
+        )
+
+    manifest = writer.write_manifest(
+        items,
+        extra={
+            "capture_mode": args.mode,
+            "viewport": {"width": viewport[0], "height": viewport[1]},
+        },
+    )
+    summary = {
+        "manifest": str(manifest),
+        "count": len(items),
+        "success_count": sum(item.status == "ok" for item in items),
+        "failed_count": sum(item.status != "ok" for item in items),
+    }
+    print(json.dumps(summary, ensure_ascii=False) if args.json else f"manifest: {manifest}")
+    return 0 if summary["failed_count"] == 0 else 2
+
+
 def _print_providers(as_json: bool) -> int:
     rows = [
         {
@@ -288,6 +384,8 @@ def main(argv: list[str] | None = None) -> int:
             return asyncio.run(_auth_check(args))
         if args.command == "capture":
             return asyncio.run(_capture(args))
+        if args.command == "webpage":
+            return asyncio.run(_webpage(args))
         return 2
     except KeyboardInterrupt:
         print("已取消", file=sys.stderr)

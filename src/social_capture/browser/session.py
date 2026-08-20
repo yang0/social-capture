@@ -127,9 +127,19 @@ class TemporaryChrome:
 
 
 class BrowserSession:
-    def __init__(self, cdp_url: str, *, cookie_header: str | None = None):
+    def __init__(
+        self,
+        cdp_url: str,
+        *,
+        cookie_header: str | None = None,
+        allow_temporary: bool = False,
+    ):
         self.cdp_url = normalize_cdp_url(cdp_url)
         self.cookie_header = cookie_header
+        # Existing social-platform capture keeps the strict CDP contract.
+        # Generic public webpages may explicitly opt into a clean temporary
+        # Chrome when no user-owned CDP endpoint is available.
+        self.allow_temporary = bool(allow_temporary)
         self._playwright: Any = None
         self._browser: Any = None
         self._context: Any = None
@@ -140,11 +150,26 @@ class BrowserSession:
         try:
             await self._connect(self.cdp_url)
         except BrowserError:
-            if not self.cookie_header:
+            if not (self.cookie_header or self.allow_temporary):
                 raise
             self._temporary = TemporaryChrome(cookie_header=self.cookie_header)
-            temporary_url = await asyncio.to_thread(self._temporary.start)
-            await self._connect(temporary_url)
+            try:
+                temporary_url = await asyncio.to_thread(self._temporary.start)
+                await self._connect(temporary_url)
+            except Exception:
+                # __aexit__ is not called when __aenter__ fails. Explicitly
+                # tear down the CLI-owned browser and Playwright transport so
+                # a failed fallback never leaves a process/profile behind.
+                if self._playwright:
+                    try:
+                        await self._playwright.stop()
+                    except Exception:
+                        pass
+                self._playwright = self._browser = self._context = None
+                if self._temporary:
+                    await asyncio.to_thread(self._temporary.close)
+                    self._temporary = None
+                raise
         return self
 
     async def _connect(self, endpoint: str) -> None:

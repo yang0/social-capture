@@ -85,6 +85,15 @@ New-Item -ItemType Directory -Force $dest | Out-Null
 Copy-Item -Recurse -Force .\skill\* $dest
 ```
 
+The standalone generic webpage skill is in `skills/web-screenshot/` and can be
+installed separately:
+
+```powershell
+$webDest = "$env:USERPROFILE\.agents\skills\web-screenshot"
+New-Item -ItemType Directory -Force $webDest | Out-Null
+Copy-Item -Recurse -Force .\skills\web-screenshot\* $webDest
+```
+
 OpenCode also supports the user-level directory
 `$env:USERPROFILE\.config\opencode\skills\social-capture`, plus the
 `.claude\skills` and `.agents\skills` compatibility directories. Restart or
@@ -144,6 +153,57 @@ can walk carousel frames with `--xhs-all-images` (the default comment limit is
 8; use `--xhs-comments 0` to hide comments). Douyin captures the profile
 header and up to the requested number of video rows (1–4, default 2); if fewer
 rows are available, the manifest records the actual rows and a partial result.
+
+## Generic webpage screenshots
+
+For a concrete webpage URL that is not one of the supported social platforms,
+use the standalone [`skills/web-screenshot/SKILL.md`](skills/web-screenshot/SKILL.md)
+workflow and the `webpage` command:
+
+```powershell
+# Viewport capture (default 1440x900)
+social-capture webpage "https://example.com" --output-dir "G:\screenshots\web"
+
+# One full-page PNG
+social-capture webpage "https://example.com" --output-dir "G:\screenshots\web" --mode full-page
+
+# Exactly one visible element
+social-capture webpage "https://example.com" --output-dir "G:\screenshots\web" `
+  --mode element --selector "main article" --viewport 1280x800
+```
+
+The command accepts HTTP(S) URLs and supports `viewport`, `full-page`, and
+`element` modes. Before a `full-page` capture it performs a finite lazy-load
+warm-up over the document height recorded immediately after navigation: it
+scrolls in bounded viewport-sized steps and waits briefly for current images
+and fonts. If lazy loading grows the document, it rescans only the newly added
+range until the height is stable or the round limit is reached, then returns
+to the top. It never auto-scrolls indefinitely. Individual external image
+failures or timeouts do not fail the capture; the manifest records
+`image_count`, `loaded`, `failed`, `pending`, `initial_height`,
+`final_warmup_height`, `rounds`, `executed_steps`, and `timed_out` for
+verification. It prefers the configured Chrome CDP endpoint. The warm-up is
+capped at 4 rounds, 64 scroll positions total, 120 ms per step/poll, and 10
+seconds total. If CDP is not available, this command may launch and clean up a
+temporary Chrome for public pages. Read `manifest.json` and verify the mode,
+final URL, dimensions, and SHA-256. Batch input, cookie files, PDF/JPEG output,
+device emulation, and login bypass are intentionally out of scope.
+
+The output directory has this shape:
+
+```text
+<output-dir>/
+├── manifest.json
+└── images/
+    └── webpage-<host>-01-of-01.png
+```
+
+If an image is still blank, inspect `manifest.json` first. `pending > 0` or
+`timed_out: true` means the page did not settle within the warm-up budget;
+increase `--wait` and retry. `failed > 0` means the resource itself failed,
+which the capture tool does not replace with fabricated content. For private
+pages, connect a Chrome CDP session that is already logged in. Pages with
+infinite loading are scanned only for the bounded number of warm-up rounds.
 
 Existing `manifest.json` or owned images cause a safe failure by default. Use
 `--overwrite` only when replacing a chosen output directory; it removes only
